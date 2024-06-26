@@ -16,18 +16,21 @@ public class Spawner : MonoBehaviour
 
     void Update()
     {
-        if (timer > beat)
+    //if (timer > beat)
+    //{
+        if (socketServer.GetSpawnPoint(out float[] spawn))
         {
-            if (socketServer.TryGetSpawnPoint(out Vector3 spawnPoint))
-            {
-                GameObject cube = Instantiate(cubes[Random.Range(0, 2)], spawnPoint, Quaternion.identity);
-                cube.transform.localPosition = Vector3.zero;
-                cube.transform.position = spawnPoint;
-                cube.transform.Rotate(transform.forward, 90 * Random.Range(0, 4));
-            }
-            timer -= beat;
+            Vector3 spawnPoint = new Vector3(spawn[0], spawn[1], spawn[2]);
+            GameObject cube = Instantiate(cubes[Random.Range(0, 2)], spawnPoint, Quaternion.identity);
+            cube.transform.localPosition = Vector3.zero;
+            cube.transform.position = spawnPoint;
+            cube.transform.Rotate(transform.forward, spawn[3]);
+            CubeMove cubeMove = cube.GetComponent<CubeMove>();
+            cubeMove.SetSpeed(spawn[4]);
         }
+    //    timer -= beat;
+    //}
 
-        timer += Time.deltaTime;
+    //    timer += Time.deltaTime;
     }
 }

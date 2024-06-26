@@ -12,7 +12,7 @@ public class SocketServer : MonoBehaviour
     private TcpListener tcpListener;
     private TcpClient connectedTcpClient;
     private bool isRunning = false;
-    private Queue<Vector3> spawnPoints = new Queue<Vector3>();
+    private Queue<float[]> spawnPoints = new Queue<float[]>();
 
     void Start()
     {
@@ -49,11 +49,11 @@ public class SocketServer : MonoBehaviour
                             string clientMessage = Encoding.ASCII.GetString(incomingData);
                             string[] coords = clientMessage.Split(',');
 
-                            if (coords.Length == 3 && float.TryParse(coords[0], out float x) && float.TryParse(coords[1], out float y) && float.TryParse(coords[2], out float z))
+                            if (coords.Length == 5 && float.TryParse(coords[0], out float x) && float.TryParse(coords[1], out float y) && float.TryParse(coords[2], out float z) && float.TryParse(coords[3], out float r) && float.TryParse(coords[4], out float s))
                             {
                                 lock (spawnPoints)
                                 {
-                                    spawnPoints.Enqueue(new Vector3(x, y, z));
+                                    spawnPoints.Enqueue(new float[]{x, y, z, r, s});
                                 }
                             }
                         }
@@ -80,17 +80,17 @@ public class SocketServer : MonoBehaviour
         }
     }
 
-    public bool TryGetSpawnPoint(out Vector3 spawnPoint)
+    public bool GetSpawnPoint(out float[] cube)
     {
         lock (spawnPoints)
         {
             if (spawnPoints.Count > 0)
             {
-                spawnPoint = spawnPoints.Dequeue();
+                cube = spawnPoints.Dequeue();
                 return true;
             }
         }
-        spawnPoint = Vector3.zero;
+        cube = new float[] {0,0,0,0,0};
         return false;
     }
 }
