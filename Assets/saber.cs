@@ -28,7 +28,7 @@ public class saber : MonoBehaviour
         }
         if (Physics.Raycast(transform.position, transform.forward, out hit, 1, bombLayer))
         {
-            if (hit.transform.CompareTag("ResetObject")) // Check if the hit object has the specific tag
+            if (hit.transform.CompareTag("bomb")) // Check if the hit object has the specific tag
             {
                 ResetGame(); // Call the method to reset the game
             }
