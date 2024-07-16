@@ -1,6 +1,7 @@
 import socket
 import random
 import time
+import json
 def send_cube(x, y, z, r, t):
     try:
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -11,19 +12,51 @@ def send_cube(x, y, z, r, t):
     except Exception as e:
         print(f"An error occurred: {e}")
 
-while True:
-    try:
-        x = float(input("Enter x coordinate: ")) # x coordinate
-        y = float(input("Enter y coordinate: ")) # y coordinate
-        z = -24 #keep this at -24 unless you want to change how far back the objects spawn.
-        r = int(input("Enter rotation (0(0), 1(45), 2(90), 3(135), 4(180), 5(225), 6(270), 7(315): ")) # rotation
-        r = r*45 #convert to degrees
-        t = int(input("Enter type (0=red,1=blu,2=bomb): ")) # type of object
-        time.sleep(1)
-        print("sent")
-        send_cube(x, y, z, r, t)
-    except ValueError:
-        print("Invalid input. Please enter numeric values for the coordinates.")
-    except KeyboardInterrupt:
-        print("Exiting...")
-        break
+def read_beat_saber_data(file_path):
+    with open(file_path, 'r') as file:
+        data = json.load(file)
+    
+    notes = data.get('_notes', [])
+    
+    start_time = time.time()
+    
+    for note in notes:
+        elapsed_time = note.get('_time')
+        lineIndex = note.get('_lineIndex')
+        lineLayer = note.get('_lineLayer')
+        cutDirection = note.get('_cutDirection')
+        type = note.get('_type')
+        if lineIndex < 2:
+            lineIndex = (0-lineIndex) + 2
+        if lineIndex > 1:
+            lineIndex = (3-lineIndex) - 2
+            
+        # Calculate the time to wait until the next beat should be processed
+        current_time = time.time()
+        wait_time = start_time + elapsed_time - current_time
+        
+        if wait_time > 0:
+            time.sleep(wait_time)
+        
+        send_cube(lineIndex, lineLayer, -24, cutDirection*45, type)
+
+# Example usage:
+# Assuming the data is saved in a file named 'beat_saber_level.dat'
+read_beat_saber_data(r'D:\CS\Unity\VRT\Level\ExpertPlus.dat')
+
+# while True:
+#     try:
+#         x = float(input("Enter x coordinate: ")) # x coordinate
+#         y = float(input("Enter y coordinate: ")) # y coordinate
+#         z = -24 #keep this at -24 unless you want to change how far back the objects spawn.
+#         r = int(input("Enter rotation (0(0), 1(45), 2(90), 3(135), 4(180), 5(225), 6(270), 7(315): ")) # rotation
+#         r = r*45 #convert to degrees
+#         t = int(input("Enter type (0=blue,1=red,2=bomb): ")) # type of object
+#         time.sleep(1)
+#         print("sent")
+#         send_cube(x, y, z, r, t)
+#     except ValueError:
+#         print("Invalid input. Please enter numeric values for the coordinates.")
+#     except KeyboardInterrupt:
+#         print("Exiting...")
+#         break
