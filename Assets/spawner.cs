@@ -19,7 +19,7 @@ public class Spawner : MonoBehaviour
     //{
         if (socketServer.GetSpawnPoint(out float[] spawn))
         {
-            Vector3 spawnPoint = new Vector3(spawn[0], spawn[1], spawn[2]);
+            Vector3 spawnPoint = new Vector3(spawn[0]*0.75f, spawn[1]+0.5f, spawn[2]);
             GameObject cube = Instantiate(cubes[(int)spawn[4]], spawnPoint, Quaternion.identity);
             cube.transform.localPosition = Vector3.zero;
             cube.transform.position = spawnPoint;
