@@ -5,7 +5,7 @@ using UnityEngine;
 public class CubeMove : MonoBehaviour
 {
     // Start is called before the first frame update
-    private float speed = 2;
+    private float speed = 3;
     void Start()
     {
     }

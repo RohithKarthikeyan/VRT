@@ -20,7 +20,7 @@ RenderSettings:
   m_FogDensity: 0.01
   m_LinearFogStart: 0
   m_LinearFogEnd: 300
-  m_AmbientSkyColor: {r: 0, g: 0, b: 0, a: 1}
+  m_AmbientSkyColor: {r: 0.5283019, g: 0.46101815, b: 0.46101815, a: 1}
   m_AmbientEquatorColor: {r: 0.114, g: 0.125, b: 0.133, a: 1}
   m_AmbientGroundColor: {r: 0.047, g: 0.043, b: 0.035, a: 1}
   m_AmbientIntensity: 1
@@ -96,8 +96,9 @@ LightmapSettings:
     m_ExportTrainingData: 0
     m_TrainingDataDestination: TrainingData
     m_LightProbeSampleCountMultiplier: 4
-  m_LightingDataAsset: {fileID: 0}
-  m_LightingSettings: {fileID: 4890085278179872738, guid: e7411b895b021b14eaae4c575a2cfbfd,
+  m_LightingDataAsset: {fileID: 112000000, guid: bd87440371e255a438afbd75c5d62125,
+    type: 2}
+  m_LightingSettings: {fileID: 4890085278179872738, guid: deabd143a8ad8624fa9c0f4e34a27451,
     type: 2}
 --- !u!196 &4
 NavMeshSettings:
@@ -1758,6 +1759,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1598091404}
   - component: {fileID: 1598091403}
+  - component: {fileID: 1598091405}
   m_Layer: 0
   m_Name: CubeSpawner
   m_TagString: Untagged
@@ -1796,6 +1798,20 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1598091405
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1598091402}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e8fe38851cb0a06428530e1bfae937be, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  interval: 1
+  folder: screenData
 --- !u!1 &1683731303
 GameObject:
   m_ObjectHideFlags: 0

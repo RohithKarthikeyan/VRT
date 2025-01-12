@@ -16,16 +16,16 @@ def read_beat_saber_data(file_path):
     with open(file_path, 'r') as file:
         data = json.load(file)
     
-    notes = data.get('_notes', [])
+    notes = data.get('colorNotes', [])
     
     start_time = time.time()
     
     for note in notes:
-        elapsed_time = note.get('_time')
-        lineIndex = note.get('_lineIndex')
-        lineLayer = note.get('_lineLayer')
-        cutDirection = note.get('_cutDirection')
-        type = note.get('_type')
+        elapsed_time = note.get('b')
+        lineIndex = note.get('x')
+        lineLayer = note.get('y')
+        cutDirection = note.get('d')
+        type = note.get('c')
         if lineIndex < 2:
             lineIndex = (0-lineIndex) + 2
         if lineIndex > 1:
@@ -42,7 +42,7 @@ def read_beat_saber_data(file_path):
 
 # Example usage:
 # Assuming the data is saved in a file named 'beat_saber_level.dat'
-read_beat_saber_data(r'D:\CS\Unity\VRT\Level\ExpertPlus.dat')
+read_beat_saber_data(r'C:\Users\Sri_V\Desktop\VRT\Level\NormalStandard.dat')
 
 # while True:
 #     try:
