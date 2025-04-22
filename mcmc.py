@@ -1,94 +1,143 @@
-
-import numpy as np
 import socket
+import threading
 import time
-import pandas as pd
-from tensorflow.keras.models import load_model
+import numpy as np
+import mne
+from io import BytesIO
+from PIL import Image
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error
 
-# Load model and brainwave data
-model = load_model(r"C:\Users\Sri_V\Downloads\best_combined_model_cleaned.h5", compile=False)
-brainwave_df = pd.read_csv("C:\\Users\\Sri_V\\Desktop\\calculated_brain_wave_frequencies.csv")
+from tensorflow.keras.models import load_model, Model
+from tensorflow.keras.applications.vgg16 import VGG16, preprocess_input
+from tensorflow.keras.layers import GlobalAveragePooling2D
 
-# Extract just the brainwave features
-features = ["Delta", "Theta", "Alpha", "Beta", "Gamma"]
-brainwave_data = brainwave_df[features].values
+from pylsl import StreamInlet, resolve_byprop
+from mne.time_frequency import tfr_multitaper
 
-# Parameters
-seq_length = 10
-steps_per_sequence = 50
+# -------- Load model --------
+model = load_model("/Users/pragnasrivellanki/Desktop/best_combined_model.h5", compile=False)
+scaler = StandardScaler()
 z_fixed = -24
+seq_length = 10
 
-# Define function to send cube parameters to Unity
-def send_cube(x, y, z, r, t):
-    try:
-        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client_socket.connect(("localhost", 12345))
-        message = f"{x},{y},{z},{r},{t}"
-        client_socket.sendall(message.encode('ascii'))
-        client_socket.close()
-    except Exception as e:
-        print(f"Socket Error: {e}")
+# -------- VGG16 Feature Extractor --------
+vgg_base = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+vgg_model = Model(inputs=vgg_base.input, outputs=GlobalAveragePooling2D()(vgg_base.output))
 
-# MCMC to minimize error between predicted and actual brainwave
-def mcmc_optimize(predicted_next, actual_next, context_window, steps=50, T=1.0):
+# -------- EEG Functions --------
+def get_live_eeg_data(duration=1.0, sfreq=256):
+    streams = resolve_byprop('type', 'EEG', timeout=5)
+    inlet = StreamInlet(streams[0], max_chunklen=12)
+    eeg_data = []
+
+    start = time.time()
+    while (time.time() - start) < duration:
+        chunk, _ = inlet.pull_chunk(timeout=1.0)
+        if chunk:
+            eeg_data.extend(chunk)
+
+    eeg_data = np.array(eeg_data)
+    if eeg_data.shape[0] < sfreq:
+        return None
+    return eeg_data.T[:4]  # Only TP9, AF7, AF8, TP10
+
+def compute_band_frequencies(eeg_chunk, sfreq=256):
+    info = mne.create_info(ch_names=["TP9", "AF7", "AF8", "TP10"], sfreq=sfreq, ch_types=["eeg"]*4)
+    raw = mne.io.RawArray(eeg_chunk, info)
+    freqs = np.arange(0.5, 100, 1)
+    n_cycles = freqs / 2
+    tfr = tfr_multitaper(raw, freqs=freqs, n_cycles=n_cycles, time_bandwidth=4.0, return_itc=False)
+
+    freq_bands = {"Delta": (0.5, 4), "Theta": (4, 8), "Alpha": (8, 13), "Beta": (13, 30), "Gamma": (30, 100)}
+    features = []
+    for fmin, fmax in freq_bands.values():
+        idx = np.logical_and(freqs >= fmin, freqs <= fmax)
+        power = np.abs(tfr.data[:, idx, :]).mean(axis=1).sum(axis=0)
+        normalized = (power - power.min()) / (power.max() - power.min() + 1e-6)
+        features.append((fmin + (fmax - fmin) * (1 - normalized)).mean())
+    return np.array(features)
+
+# -------- MCMC Optimizer --------
+def mcmc_optimize(predicted, actual, context, image_seq, steps=50, T=1.0):
     current = np.array([1, 1, z_fixed, 0, 1])
     best = current
     best_score = -np.inf
-
     for _ in range(steps):
-        # Generate proposal
         proposal = current + np.random.normal(scale=[1, 1, 0, 1, 1], size=5)
-
-        # Normalize x (mirror logic from your data)
-        x_raw = int(round(proposal[0]))
-        if x_raw < 2:
-            x = (0 - x_raw) + 2
-        else:
-            x = (3 - x_raw) - 2
-        x = int(np.clip(x, 0, 3))
-
-        # Normalize y
+        x = int(np.clip((0 - round(proposal[0])) + 2 if proposal[0] < 2 else (3 - round(proposal[0])) - 2, 0, 3))
         y = int(np.clip(round(proposal[1]), 0, 2))
-
-        # z is fixed
         z = z_fixed
-
-        # Normalize r (rotation) as multiple of 45 in [0, 315]
         r = int((round(proposal[3]) % 8)) * 45
-
-        # Normalize type (t)
         t = int(np.clip(round(proposal[4]), 0, 1))
-
-        normalized_proposal = np.array([x, y, z, r, t])
-
-        # Simulate effect
-        image_seq_dummy = np.zeros((1, seq_length, 512))
-        brainwave_seq = np.expand_dims(context_window, axis=0)
-        predicted = model.predict([image_seq_dummy, brainwave_seq], verbose=0)[0]
-
-        mse_error = mean_squared_error(predicted_next, actual_next)
-        score = -mse_error
-
+        pred = model.predict([image_seq, np.expand_dims(context, 0)], verbose=0)[0]
+        mse = mean_squared_error(predicted, actual)
+        score = -mse
         if score > best_score or np.random.rand() < np.exp((score - best_score) / T):
-            best = normalized_proposal
-            best_score = score
-            current = normalized_proposal
-
+            best, best_score, current = [x, y, z, r, t], score, [x, y, z, r, t]
     return best
 
-# Store results
-results = []
+# -------- Handle Screenshot Upload --------
+def handle_unity_connection(conn, addr, eeg_seq, image_seq):
+    try:
+        img_data = b''
+        while True:
+            chunk = conn.recv(4096)
+            if not chunk:
+                break
+            img_data += chunk
 
-# Main loop: slide through sequences
-for i in range(len(brainwave_data) - seq_length - 1):
-    context = brainwave_data[i:i+seq_length]
-    predicted_next = model.predict([np.zeros((1, seq_length, 512)), np.expand_dims(context, 0)], verbose=0)[0]
-    actual_next = brainwave_data[i + seq_length]
+        image = Image.open(BytesIO(img_data)).convert("RGB")
+        image = image.resize((224, 224))
+        image_array = preprocess_input(np.expand_dims(np.array(image), axis=0))
+        image_feat = vgg_model.predict(image_array, verbose=0).flatten()
 
-    best_cube = mcmc_optimize(predicted_next, actual_next, context)
-    send_cube(*best_cube)
+        eeg_chunk = get_live_eeg_data(duration=1.0)
+        if eeg_chunk is None:
+            print("⚠️ EEG data not available.")
+            return
 
-    results.append((*best_cube, *predicted_next, *actual_next))
-    print(f"[{i}] Sent cube {best_cube} | Predicted vs Actual Δ: {np.round(np.array(predicted_next) - np.array(actual_next), 3)}")
-    time.sleep(1.0)
+        eeg_freqs = compute_band_frequencies(eeg_chunk)
+
+        eeg_seq.append(eeg_freqs)
+        image_seq.append(image_feat)
+
+        if len(eeg_seq) >= seq_length and len(image_seq) >= seq_length:
+            context = np.array(eeg_seq[-seq_length:])
+            images = np.array(image_seq[-seq_length:]).reshape(1, seq_length, -1)
+            predicted = model.predict([images, np.expand_dims(context, 0)], verbose=0)[0]
+            actual = context[-1]
+            best_cube = mcmc_optimize(predicted, actual, context, images)
+
+            response = f"{best_cube[0]},{best_cube[1]},{best_cube[2]},{best_cube[3]},{best_cube[4]}"
+            conn.sendall(response.encode('ascii'))
+            print(f"🎯 Sent cube to Unity: {response}")
+        else:
+            print("⏳ Waiting for enough data...")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+    finally:
+        conn.close()
+
+# -------- TCP Socket Server --------
+def start_server():
+    eeg_seq = []
+    image_seq = []
+
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("0.0.0.0", 5001))  # Match Unity's target
+    server.listen(5)
+    print("🖼️ Screenshot server listening on port 5001...")
+
+    while True:
+        conn, addr = server.accept()
+        print(f"📥 Image received from {addr}")
+        threading.Thread(target=handle_unity_connection, args=(conn, addr, eeg_seq, image_seq)).start()
+
+# -------- MAIN --------
+if __name__ == "__main__":
+    try:
+        print("⚠️ Make sure to run 'muselsl stream' in another terminal before this.")
+        start_server()
+    except KeyboardInterrupt:
+        print("👋 Exiting.")
