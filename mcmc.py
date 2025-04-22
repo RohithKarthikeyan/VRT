@@ -26,11 +26,28 @@ vgg_base = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3
 vgg_model = Model(inputs=vgg_base.input, outputs=GlobalAveragePooling2D()(vgg_base.output))
 
 # -------- EEG Functions --------
-def get_live_eeg_data(duration=1.0, sfreq=256):
-    streams = resolve_byprop('type', 'EEG', timeout=5)
-    inlet = StreamInlet(streams[0], max_chunklen=12)
-    eeg_data = []
+def get_live_eeg_data(duration=1.0, sfreq=256, max_retries=10):
+    inlet = None
+    for attempt in range(max_retries):
+        try:
+            print(f"🔎 Searching for EEG stream (attempt {attempt+1}/{max_retries})...")
+            streams = resolve_byprop('type', 'EEG', timeout=5)
+            if streams:
+                inlet = StreamInlet(streams[0], max_chunklen=12)
+                print("✅ EEG stream found.")
+                break
+            else:
+                print("⚠️ No EEG stream found yet. Retrying...")
+                time.sleep(2)
+        except Exception as e:
+            print(f"❌ Stream resolution error: {e}")
+            time.sleep(2)
 
+    if inlet is None:
+        print("❌ Failed to connect to EEG stream after retries.")
+        return None
+
+    eeg_data = []
     start = time.time()
     while (time.time() - start) < duration:
         chunk, _ = inlet.pull_chunk(timeout=1.0)
@@ -39,8 +56,11 @@ def get_live_eeg_data(duration=1.0, sfreq=256):
 
     eeg_data = np.array(eeg_data)
     if eeg_data.shape[0] < sfreq:
+        print("⚠️ EEG data chunk too short.")
         return None
-    return eeg_data.T[:4]  # Only TP9, AF7, AF8, TP10
+
+    return eeg_data.T[:4]  # TP9, AF7, AF8, TP10
+
 
 def compute_band_frequencies(eeg_chunk, sfreq=256):
     info = mne.create_info(ch_names=["TP9", "AF7", "AF8", "TP10"], sfreq=sfreq, ch_types=["eeg"]*4)
