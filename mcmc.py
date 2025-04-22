@@ -26,7 +26,7 @@ vgg_base = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3
 vgg_model = Model(inputs=vgg_base.input, outputs=GlobalAveragePooling2D()(vgg_base.output))
 
 # -------- EEG Functions --------
-def get_live_eeg_data(duration=1.0, sfreq=256, max_retries=10):
+def get_live_eeg_data(duration=2.0, min_samples=200, max_retries=5):
     inlet = None
     for attempt in range(max_retries):
         try:
@@ -47,20 +47,28 @@ def get_live_eeg_data(duration=1.0, sfreq=256, max_retries=10):
         print("❌ Failed to connect to EEG stream after retries.")
         return None
 
-    eeg_data = []
-    start = time.time()
-    while (time.time() - start) < duration:
-        chunk, _ = inlet.pull_chunk(timeout=1.0)
-        if chunk:
-            eeg_data.extend(chunk)
+    print("⏳ Waiting 2 seconds for buffer to fill...")
+    time.sleep(2)
 
-    eeg_data = np.array(eeg_data)
-    if eeg_data.shape[0] < sfreq:
-        print("⚠️ EEG data chunk too short.")
-        return None
+    for attempt in range(max_retries):
+        eeg_data = []
+        start = time.time()
+        while (time.time() - start) < duration:
+            chunk, _ = inlet.pull_chunk(timeout=1.0)
+            if chunk:
+                eeg_data.extend(chunk)
 
-    return eeg_data.T[:4]  # TP9, AF7, AF8, TP10
+        eeg_data = np.array(eeg_data)
+        print(f"📏 EEG chunk attempt {attempt+1}: {eeg_data.shape[0]} samples")
 
+        if eeg_data.shape[0] >= min_samples:
+            return eeg_data.T[:4]  # TP9, AF7, AF8, TP10
+
+        print("⚠️ EEG chunk too short. Retrying...")
+        time.sleep(1)
+
+    print("❌ Failed to get a full EEG chunk after retries.")
+    return None
 
 def compute_band_frequencies(eeg_chunk, sfreq=256):
     info = mne.create_info(ch_names=["TP9", "AF7", "AF8", "TP10"], sfreq=sfreq, ch_types=["eeg"]*4)
@@ -97,6 +105,17 @@ def mcmc_optimize(predicted, actual, context, image_seq, steps=50, T=1.0):
             best, best_score, current = [x, y, z, r, t], score, [x, y, z, r, t]
     return best
 
+# -------- Send to Unity (Port 12345) --------
+def send_cube_directly(x, y, z, r, t):
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.connect(("localhost", 12345))
+            msg = f"{x},{y},{z},{r},{t}"
+            sock.sendall(msg.encode("ascii"))
+            print(f"📦 Cube sent to Unity via port 12345: {msg}")
+    except Exception as e:
+        print(f"❌ Cube send error: {e}")
+
 # -------- Handle Screenshot Upload --------
 def handle_unity_connection(conn, addr, eeg_seq, image_seq):
     try:
@@ -112,7 +131,7 @@ def handle_unity_connection(conn, addr, eeg_seq, image_seq):
         image_array = preprocess_input(np.expand_dims(np.array(image), axis=0))
         image_feat = vgg_model.predict(image_array, verbose=0).flatten()
 
-        eeg_chunk = get_live_eeg_data(duration=1.0)
+        eeg_chunk = get_live_eeg_data()
         if eeg_chunk is None:
             print("⚠️ EEG data not available.")
             return
@@ -122,6 +141,10 @@ def handle_unity_connection(conn, addr, eeg_seq, image_seq):
         eeg_seq.append(eeg_freqs)
         image_seq.append(image_feat)
 
+        # Log sequence growth
+        print(f"🧠 EEG sequence length: {len(eeg_seq)} / {seq_length}")
+        print(f"🖼️ Image sequence length: {len(image_seq)} / {seq_length}")
+
         if len(eeg_seq) >= seq_length and len(image_seq) >= seq_length:
             context = np.array(eeg_seq[-seq_length:])
             images = np.array(image_seq[-seq_length:]).reshape(1, seq_length, -1)
@@ -129,11 +152,7 @@ def handle_unity_connection(conn, addr, eeg_seq, image_seq):
             actual = context[-1]
             best_cube = mcmc_optimize(predicted, actual, context, images)
 
-            response = f"{best_cube[0]},{best_cube[1]},{best_cube[2]},{best_cube[3]},{best_cube[4]}"
-            conn.sendall(response.encode('ascii'))
-            print(f"🎯 Sent cube to Unity: {response}")
-        else:
-            print("⏳ Waiting for enough data...")
+            send_cube_directly(*best_cube)
     except Exception as e:
         print(f"❌ Error: {e}")
     finally:
@@ -145,7 +164,7 @@ def start_server():
     image_seq = []
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind(("0.0.0.0", 5001))  # Match Unity's target
+    server.bind(("0.0.0.0", 5001))  # Match Unity's upload port
     server.listen(5)
     print("🖼️ Screenshot server listening on port 5001...")
 
