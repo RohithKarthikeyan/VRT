@@ -93,7 +93,12 @@ def mcmc_optimize(predicted, actual, context, image_seq, steps=50, T=1.0):
     best_score = -np.inf
     for _ in range(steps):
         proposal = current + np.random.normal(scale=[1, 1, 0, 1, 1], size=5)
-        x = int(np.clip((0 - round(proposal[0])) + 2 if proposal[0] < 2 else (3 - round(proposal[0])) - 2, 0, 3))
+        if (proposal[4] > 0.5):
+            type_bias = 1
+        else:
+            type_bias = -1
+        biased_x_proposal = proposal[0] + type_bias
+        x = int(np.clip((0 - round(biased_x_proposal)) + 2 if biased_x_proposal < 2 else (3 - round(biased_x_proposal)) - 2, 0, 3))
         y = int(np.clip(round(proposal[1]), 0, 2))
         z = z_fixed
         r = int((round(proposal[3]) % 8)) * 45
