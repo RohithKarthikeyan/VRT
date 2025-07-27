@@ -103,6 +103,12 @@ def mcmc_optimize(predicted, actual, context, image_seq, steps=50, T=1.0):
         z = z_fixed
         r = int((round(proposal[3]) % 8)) * 45
         t = int(np.clip(round(proposal[4]), 0, 1))
+
+        if (r == 0 and y == 2):
+            y = np.random.choice([0, 1])
+        elif (r == 180 and y == 0):
+            y = np.random.choice([1, 2])
+        
         pred = model.predict([image_seq, np.expand_dims(context, 0)], verbose=0)[0]
         mse = mean_squared_error(predicted, actual)
         score = -mse
